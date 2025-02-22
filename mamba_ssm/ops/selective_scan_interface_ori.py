@@ -100,6 +100,16 @@ def rms_norm_forward(
     # y (b l) d
     return y
 
+
+def selective_scan_fn(u, delta, A, B, C, D=None, z=None, delta_bias=None, delta_softplus=False,
+                     return_last_state=False):
+    """if return_last_state is True, returns (out, last_state)
+    last_state has shape (batch, dim, dstate). Note that the gradient of the last state is
+    not considered in the backward pass.
+    """
+    return SelectiveScanFn.apply(u, delta, A, B, C, D, z, delta_bias, delta_softplus, return_last_state)
+
+
 def selective_scan_ref(u, delta, A, B, C, D=None, z=None, delta_bias=None, delta_softplus=False,
                       return_last_state=False):
     """
@@ -168,14 +178,6 @@ def selective_scan_ref(u, delta, A, B, C, D=None, z=None, delta_bias=None, delta
     out = out.to(dtype=dtype_in)
     return out if not return_last_state else (out, last_state)
 
-def selective_scan_fn(u, delta, A, B, C, D=None, z=None, delta_bias=None, delta_softplus=False,
-                     return_last_state=False):
-    """if return_last_state is True, returns (out, last_state)
-    last_state has shape (batch, dim, dstate). Note that the gradient of the last state is
-    not considered in the backward pass.
-    """
-    # return SelectiveScanFn.apply(u, delta, A, B, C, D, z, delta_bias, delta_softplus, return_last_state)
-    return selective_scan_ref(u, delta, A, B, C, D, z, delta_bias, delta_softplus, return_last_state)
 
 class MambaInnerFn(torch.autograd.Function):
 

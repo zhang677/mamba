@@ -17,12 +17,10 @@ try:
 except ImportError:
     causal_conv1d_fn, causal_conv1d_update = None, None
 
-# try:
-#     from mamba_ssm.ops.triton.selective_state_update import selective_state_update
-# except ImportError:
-#     selective_state_update = None
-# Comment out the triton for aten graph capturing    
-selective_state_update = None
+try:
+    from mamba_ssm.ops.triton.selective_state_update import selective_state_update
+except ImportError:
+    selective_state_update = None
 
 try:
     from mamba_ssm.ops.triton.layer_norm import RMSNorm, layer_norm_fn, rms_norm_fn
@@ -130,12 +128,9 @@ class Mamba(nn.Module):
             conv_state, ssm_state = self._get_states_from_cache(inference_params, batch)
             if inference_params.seqlen_offset > 0:
                 # The states are updated inplace
-                # print("Calling step")
-                # [genghan] Update cache manually
-                out, conv_state, ssm_state = self.step(hidden_states, conv_state, ssm_state)
-                inference_params.key_value_memory_dict[self.layer_idx] = (conv_state, ssm_state)
+                out, _, _ = self.step(hidden_states, conv_state, ssm_state)
                 return out
-        # print("Calling forward")
+
         # We do matmul and transpose BLH -> HBL at the same time
         xz = rearrange(
             self.in_proj.weight @ rearrange(hidden_states, "b l d -> d (b l)"),
@@ -169,9 +164,7 @@ class Mamba(nn.Module):
             if conv_state is not None:
                 # If we just take x[:, :, -self.d_conv :], it will error if seqlen < self.d_conv
                 # Instead F.pad will pad with zeros if seqlen < self.d_conv, and truncate otherwise.
-                # conv_state.copy_(F.pad(x, (self.d_conv - x.shape[-1], 0)))  # Update state (B D W)
-                # [genghan] Remove copy_ to avoid in-place operation for aten graph tracing
-                conv_state = F.pad(x, (self.d_conv - x.shape[-1], 0))
+                conv_state.copy_(F.pad(x, (self.d_conv - x.shape[-1], 0)))  # Update state (B D W)
             if causal_conv1d_fn is None:
                 x = self.act(self.conv1d(x)[..., :seqlen])
             else:
@@ -207,14 +200,9 @@ class Mamba(nn.Module):
             )
             if ssm_state is not None:
                 y, last_state = y
-                # ssm_state.copy_(last_state)
-                # [genghan] Remove copy_ to avoid in-place operation for aten graph tracing
-                ssm_state = last_state.clone()
+                ssm_state.copy_(last_state)
             y = rearrange(y, "b d l -> b l d")
             out = self.out_proj(y)
-            # [Genghan]: Update cache
-            if inference_params is not None:
-                inference_params.key_value_memory_dict[self.layer_idx] = (conv_state, ssm_state)
         return out
 
     def step(self, hidden_states, conv_state, ssm_state):
@@ -225,9 +213,7 @@ class Mamba(nn.Module):
 
         # Conv step
         if causal_conv1d_update is None:
-            # conv_state.copy_(torch.roll(conv_state, shifts=-1, dims=-1))  # Update state (B D W)
-            # [genghan] Remove copy_ to avoid in-place operation for aten graph tracing
-            conv_state = torch.roll(conv_state, shifts=-1, dims=-1)
+            conv_state.copy_(torch.roll(conv_state, shifts=-1, dims=-1))  # Update state (B D W)
             conv_state[:, :, -1] = x
             x = torch.sum(conv_state * rearrange(self.conv1d.weight, "d 1 w -> d w"), dim=-1)  # (B D)
             if self.conv1d.bias is not None:
@@ -254,9 +240,7 @@ class Mamba(nn.Module):
             dt = F.softplus(dt + self.dt_proj.bias.to(dtype=dt.dtype))
             dA = torch.exp(torch.einsum("bd,dn->bdn", dt, A))
             dB = torch.einsum("bd,bn->bdn", dt, B)
-            # ssm_state.copy_(ssm_state * dA + rearrange(x, "b d -> b d 1") * dB)
-            # [genghan] Remove copy_ to avoid in-place operation for aten graph tracing
-            ssm_state = ssm_state * dA + rearrange(x, "b d -> b d 1") * dB
+            ssm_state.copy_(ssm_state * dA + rearrange(x, "b d -> b d 1") * dB)
             y = torch.einsum("bdn,bn->bd", ssm_state.to(dtype), C)
             y = y + self.D.to(dtype) * x
             y = y * self.act(z)  # (B D)

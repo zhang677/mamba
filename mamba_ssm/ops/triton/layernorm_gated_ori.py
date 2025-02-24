@@ -433,7 +433,5 @@ class RMSNorm(torch.nn.Module):
     def forward(self, x, z=None):
         """If z is not None, we do norm(x) * silu(z) if norm_before_gate, else norm(x * silu(z))
         """
-        # return rmsnorm_fn(x, self.weight, self.bias, z=z, eps=self.eps, group_size=self.group_size,
-        #                   norm_before_gate=self.norm_before_gate)
-        return rms_norm_ref(x, self.weight, self.bias, z=z, eps=self.eps, group_size=self.group_size,
-                           norm_before_gate=self.norm_before_gate)
+        return rmsnorm_fn(x, self.weight, self.bias, z=z, eps=self.eps, group_size=self.group_size,
+                          norm_before_gate=self.norm_before_gate)

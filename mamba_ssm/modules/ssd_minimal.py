@@ -42,7 +42,7 @@ def ssd_minimal_discrete(X, A, B, C, block_len, initial_states=None):
         Y: (batch, length, n_heads, d_head)
     """
     assert X.dtype == A.dtype == B.dtype == C.dtype
-    assert X.shape[1] % block_len == 0
+    assert X.shape[1] % block_len == 0, f"Length {X.shape[1]} must be divisible by block_len {block_len}"
 
     # Rearrange into blocks/chunks
     X, A, B, C = [rearrange(x, "b (c l) ... -> b c l ...", l=block_len) for x in (X, A, B, C)]

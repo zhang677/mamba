@@ -19,7 +19,7 @@ except ImportError:
 
 from mamba_ssm.ops.triton.ssd_combined import mamba_chunk_scan_combined
 from mamba_ssm.ops.triton.ssd_combined import mamba_split_conv1d_scan_combined
-from mamba_ssm.modules.ssd_minimal import ssd_minimal_discrete
+
 
 class Mamba2Simple(nn.Module):
     def __init__(
@@ -179,27 +179,18 @@ class Mamba2Simple(nn.Module):
             # Split into 3 main branches: X, B, C
             # These correspond to V, K, Q respectively in the SSM/attention duality
             x, B, C = torch.split(xBC, [self.d_inner, self.ngroups * self.d_state, self.ngroups * self.d_state], dim=-1)
-            # y = mamba_chunk_scan_combined(
-            #     rearrange(x, "b l (h p) -> b l h p", p=self.headdim),
-            #     dt,
-            #     A,
-            #     rearrange(B, "b l (g n) -> b l g n", g=self.ngroups),
-            #     rearrange(C, "b l (g n) -> b l g n", g=self.ngroups),
-            #     chunk_size=self.chunk_size,
-            #     D=self.D,
-            #     z=None,
-            #     seq_idx=seq_idx,
-            #     initial_states=initial_states,
-            #     **dt_limit_kwargs,
-            # )
-            x = rearrange(x, "b l (h p) -> b l h p", p=self.headdim)
-            y, _ = ssd_minimal_discrete(
-                x * dt.unsqueeze(-1),
-                A * dt,
+            y = mamba_chunk_scan_combined(
+                rearrange(x, "b l (h p) -> b l h p", p=self.headdim),
+                dt,
+                A,
                 rearrange(B, "b l (g n) -> b l g n", g=self.ngroups),
                 rearrange(C, "b l (g n) -> b l g n", g=self.ngroups),
-                block_len=self.chunk_size,
-                initial_states=initial_states
+                chunk_size=self.chunk_size,
+                D=self.D,
+                z=None,
+                seq_idx=seq_idx,
+                initial_states=initial_states,
+                **dt_limit_kwargs,
             )
             y = rearrange(y, "b l h p -> b l (h p)")
 
